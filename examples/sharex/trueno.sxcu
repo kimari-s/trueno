@@ -1,0 +1,17 @@
+{
+  "Version": "16.0.0",
+  "Name": "Trueno",
+  "DestinationType": "ImageUploader, FileUploader",
+  "RequestMethod": "POST",
+  "RequestURL": "https://your.host.example/upload",
+  "Headers": {
+    "Authorization": "Bearer YOUR_KEY"
+  },
+  "Body": "MultipartFormData",
+  "Arguments": {
+    "time": "1w"
+  },
+  "FileFormName": "file",
+  "URL": "{json:url}",
+  "ErrorMessage": "{json:error}"
+}

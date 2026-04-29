@@ -1,0 +1,62 @@
+# Trueno — Apache config for the file host.
+#
+# Layout:
+#   ./upload.cgi          — POST /upload handler (CGI)
+#   ./info.cgi            — GET  /info  runtime limits (CGI)
+#   ./files/<bucket>/     — uploaded files (id.ext, 4-char base62 id)
+#                           buckets: 1h | 1d | 1w | keep
+# Public URLs (replace example.test with your origin):
+#   POST  https://a.example.test/upload
+#   GET   https://a.example.test/info
+#   GET   https://a.example.test/<id>.<ext>            (keep bucket, short form)
+#   GET   https://a.example.test/<bucket>/<id>.<ext>   (1h | 1d | 1w)
+
+Options -Indexes +ExecCGI
+AddHandler cgi-script .cgi
+
+# Internal helper modules (e.g. _trueno.py) live alongside the CGIs so Python
+# can import them, but Apache must never serve them as static files.
+<FilesMatch "^_.*\.py$">
+    Require all denied
+</FilesMatch>
+
+# Apache strips Authorization before invoking CGI by default; pass it through.
+# CGIPassAuth needs Apache 2.4.13+; the RewriteRule below is a fallback for
+# older configs (writes the header into REDIRECT_HTTP_AUTHORIZATION which our
+# CGI also checks).
+<IfModule mod_cgi.c>
+    CGIPassAuth On
+</IfModule>
+
+# Inject the public URL base into the CGI env. Edit this for your deployment.
+# The API key is NOT set here — upload.cgi reads it from ~/.trueno-key
+# (chmod 600, outside docroot) or, for local dev, from ASSET_API_KEY.
+SetEnv ASSET_PUBLIC_URL "https://a.example.test"
+
+RewriteEngine On
+
+# Fallback for hosts where CGIPassAuth is unavailable: copy Authorization
+# into an env var the script can read.
+RewriteCond %{HTTP:Authorization} ^(.+)$
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+
+# /upload (and /upload/) → /upload.cgi
+RewriteRule ^upload/?$ /upload.cgi [L]
+
+# /info (and /info/) → /info.cgi   (runtime config / limits)
+RewriteRule ^info/?$ /info.cgi [L]
+
+# URL length encodes the bucket category — short-lived buckets get a 4-char
+# ID (cheap, slot-reuse acceptable since expires_at is in the contract);
+# keep gets a 6-char ID (stable URLs, vast namespace for long accumulation).
+# The patterns must match _ID_LEN_BY_BUCKET in _trueno.py exactly.
+
+# /<bucket>/<id>.<ext> → /files/<bucket>/<id>.<ext>  (TTL'd buckets, 4-char)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(1h|1d|1w)/([A-Za-z0-9]{4}\.[A-Za-z0-9]{2,5})$ /files/$1/$2 [L]
+
+# /<id>.<ext> → /files/keep/<id>.<ext>  (privileged short URL = keep bucket, 6-char)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([A-Za-z0-9]{6}\.[A-Za-z0-9]{2,5})$ /files/keep/$1 [L]

@@ -1,0 +1,26 @@
+[project]
+name = "trueno"
+version = "0.3.0"
+description = "Minimal CGI file host for shared hosting. Stdlib-only Python."
+readme = "README.md"
+# The CGI itself runs on Python 3.6.8+ (no cgi-module dependency); this
+# requires-python is for the dev tooling (ruff / pyright / pytest), which
+# need a more recent interpreter.
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "pyright>=1.1",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+pythonpath = ["docroot"]
