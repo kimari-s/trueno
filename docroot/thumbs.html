@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Site title: set SITE_TITLE in make.local; `make deploy` writes it here. -->
+<title>🔱Trueno Uploader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&family=BIZ+UDPGothic&display=swap">
+<link rel="stylesheet" href="/_ui.css">
+<script src="/_ui.js"></script>
+</head>
+<body>
+<h1>🔱Trueno Uploader <nav><a href="/">Files</a></nav></h1>
+<div id="pagerTop"></div>
+<div class="grid" id="grid"><span class="muted">Loading…</span></div>
+<div id="pagerBottom"></div>
+<footer><span>Runs on <a href="https://github.com/kimari-s/trueno">Trueno</a>, a minimal CGI uploader · © kimari-s</span><a href="/api.html">API</a></footer>
+<script>
+(function () {
+  "use strict";
+  var U = window.TruenoUI, page = 1, pages = 1;
+  var $ = function (id) { return document.getElementById(id); };
+  function load() {
+    $("grid").innerHTML = '<span class="muted">Loading…</span>';
+    fetch("/list?bucket=all&page=" + page)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) throw new Error(d.error);
+        pages = d.pages; page = d.page;
+        ["pagerTop", "pagerBottom"].forEach(function (id) {
+          $(id).innerHTML = "";
+          $(id).appendChild(U.pager(page, pages, function (p) { page = p; load(); }, d.total));
+        });
+        var imgs = d.items.filter(function (it) { return U.IMAGE_EXTS.test(it.id); });
+        if (!imgs.length) { $("grid").innerHTML = '<span class="muted">No images on this page.</span>'; return; }
+        $("grid").innerHTML = imgs.map(function (it) {
+          return '<figure><a href="' + U.esc(it.url) + '" target="_blank" rel="noopener"><img src="' + U.esc(it.url) + '" alt="" loading="lazy"></a>' +
+            "<figcaption>" + U.esc(it.id) + (U.showName(it) ? '<span class="c">' + U.esc(it.name) + "</span>" : "") + (it.comment ? '<span class="c">' + U.esc(it.comment) + "</span>" : "") +
+            '<span class="c">' + U.fmtBytes(it.size) + " · " + U.fmtDate(it.uploaded_at) + " · " + U.esc(U.fmtLeft(it.expires_at, d.now)) + "</span></figcaption></figure>";
+        }).join("");
+      })
+      .catch(function (e) { $("grid").innerHTML = '<span class="err">' + U.esc(e.message) + "</span>"; });
+  }
+  load();
+})();
+</script>
+</body>
+</html>

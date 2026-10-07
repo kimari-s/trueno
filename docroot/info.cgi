@@ -20,7 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _trueno import (  # noqa: E402
     ALLOWED_EXTS,
+    ANON_BUCKETS,
     BUCKETS,
+    COMMENT_MAX_CHARS,
+    DELETE_KEY_MAX_CHARS,
     DEFAULT_TIME,
     MAX_BYTES,
     PUBLIC_URL_BASE,
@@ -59,6 +62,10 @@ def main() -> None:
             "rate_window_sec": RATE_WINDOW_SEC,
             "rate_max_items": RATE_MAX_ITEMS,
             "id_len_by_bucket": dict(_ID_LEN_BY_BUCKET),
+            # Classic uploader mode: buckets open to token-less uploads ([] = token only).
+            "anon_buckets": sorted(ANON_BUCKETS),
+            "comment_max_chars": COMMENT_MAX_CHARS,
+            "delete_key_max_chars": DELETE_KEY_MAX_CHARS,
         },
     )
 

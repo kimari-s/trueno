@@ -6,7 +6,11 @@
     "summary": "Minimal CGI file host for shared hosting.",
     "description": "POST a multipart file with a Bearer token, get a short URL back. Each upload chooses a TTL via the `time` field; one option is non-expiring and gets a privileged short URL form. [Trueno](https://github.com/kimari-s/trueno) (MIT) — inspired by [LitterBox](https://litterbox.catbox.moe/) / [catbox](https://catbox.moe/)."
   },
-  "servers": [{"url": "https://a.example.test"}],
+  "servers": [
+    {
+      "url": "https://a.example.test"
+    }
+  ],
   "components": {
     "securitySchemes": {
       "bearerAuth": {
@@ -18,23 +22,55 @@
     "schemas": {
       "UploadResponse": {
         "type": "object",
-        "required": ["url", "size", "time", "expires_at"],
+        "required": [
+          "url",
+          "size",
+          "time",
+          "expires_at"
+        ],
         "properties": {
-          "url": {"type": "string", "format": "uri", "example": "https://a.example.test/1h/AwkQ.jpg", "description": "Public URL. Short-lived buckets carry the bucket as a path segment with a 4-char ID (`/1h/AwkQ.jpg`); the `keep` bucket gets a privileged short form with a 6-char ID (`/AwkqLF.jpg`)."},
-          "size": {"type": "integer", "minimum": 1},
-          "time": {"type": "string", "enum": ["1h", "1d", "1w", "keep"], "description": "TTL bucket assigned to this upload."},
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "example": "https://a.example.test/1h/AwkQ.jpg",
+            "description": "Public URL. Short-lived buckets carry the bucket as a path segment with a 4-char ID (`/1h/AwkQ.jpg`); the `keep` bucket gets a privileged short form with a 6-char ID (`/AwkqLF.jpg`)."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "time": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "1d",
+              "1w",
+              "keep"
+            ],
+            "description": "TTL bucket assigned to this upload."
+          },
           "expires_at": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "description": "Unix epoch seconds when the file is eligible for cron deletion. `null` for the `keep` bucket (no auto-expiry)."
           }
         }
       },
       "ErrorResponse": {
         "type": "object",
-        "required": ["error", "status"],
+        "required": [
+          "error",
+          "status"
+        ],
         "properties": {
-          "error": {"type": "string"},
-          "status": {"type": "integer"}
+          "error": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          }
         }
       }
     }
@@ -43,22 +79,46 @@
     "/upload": {
       "post": {
         "summary": "Upload a file",
-        "description": "Stores the body under a base62 ID inside the chosen TTL bucket (4 chars for time-limited buckets, 6 chars for `keep`) and returns its public URL. Accepts common images / documents / video / audio / archives (jpg, png, webp, svg, pdf, txt, md, json, mp4, mov, mp3, wav, zip, tar.gz, 7z, …); see `ALLOWED_EXTS` in `_trueno.py` for the full set. Max 50 MiB.",
-        "security": [{"bearerAuth": []}],
+        "description": "Stores the body under a base62 ID inside the chosen TTL bucket (4 chars for time-limited buckets, 6 chars for `keep`) and returns its public URL. Accepts common images / documents / video / audio / archives (jpg, png, webp, svg, pdf, txt, md, json, mp4, mov, mp3, wav, zip, tar.gz, 7z, …); see `ALLOWED_EXTS` in `_trueno.py` for the full set. Max 50 MiB.\n\nThe bearer token is optional when the server lists the bucket in `ASSET_ANON_BUCKETS` (classic uploader mode; see `anon_buckets` in `GET /info`).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "type": "object",
-                "required": ["file"],
+                "required": [
+                  "file"
+                ],
                 "properties": {
-                  "file": {"type": "string", "format": "binary"},
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
                   "time": {
                     "type": "string",
-                    "enum": ["1h", "1d", "1w", "keep"],
+                    "enum": [
+                      "1h",
+                      "1d",
+                      "1w",
+                      "keep"
+                    ],
                     "default": "1h",
                     "description": "TTL bucket name. Time-limited buckets are swept by cron; the `keep` bucket is exempt and gets a privileged short URL (no `/<bucket>/` prefix). Allowed values are listed in `enum` above and reflect the runtime `BUCKETS` config."
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Shown next to the file in the listing (classic uploader comment)."
+                  },
+                  "delete_key": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "Per-file delete password. Only its hash is stored; present it to `POST /delete` later."
                   }
                 }
               }
@@ -68,16 +128,106 @@
         "responses": {
           "200": {
             "description": "Upload accepted.",
-            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UploadResponse"}}}
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "Original filename as uploaded."
+                    },
+                    "comment": {
+                      "type": "string"
+                    },
+                    "has_delete_key": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
           },
-          "400": {"description": "Bad request (empty body / missing file field / invalid `time`).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
-          "401": {"description": "Missing or invalid bearer token.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
-          "403": {"description": "Bearer token recognised but not authorised for the requested `time` bucket. Per-key bucket allow-lists let an operator hand out a key (e.g., a publicly-shared one) that can write only to time-limited buckets without granting `keep` access.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
-          "405": {"description": "Method not allowed (POST only).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
-          "413": {"description": "File exceeds 50 MiB.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
-          "415": {"description": "Extension not allowed.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
-          "429": {"description": "Rate limit hit (too many recent uploads in the host-wide window).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
-          "503": {"description": "Uploader not configured (server-side).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+          "400": {
+            "description": "Bad request (empty body / missing file field / invalid `time`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Bearer token recognised but not authorised for the requested `time` bucket. Per-key bucket allow-lists let an operator hand out a key (e.g., a publicly-shared one) that can write only to time-limited buckets without granting `keep` access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed (POST only).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File exceeds 50 MiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Extension not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit hit (too many recent uploads in the host-wide window).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Uploader not configured (server-side).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -86,12 +236,31 @@
         "summary": "Fetch a kept file",
         "description": "Privileged short URL form, reserved for the `keep` bucket. Apache rewrites this to `/files/keep/{id}.{ext}` and serves the file directly. Not subject to cron expiry, but operator deletion is possible. ID is 6-char base62 — `keep` gets a wider namespace than the 4-char short-lived buckets so URL stability holds across decades of accumulation.",
         "parameters": [
-          {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[A-Za-z0-9]{6}$"}},
-          {"name": "ext", "in": "path", "required": true, "schema": {"type": "string"}}
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{6}$"
+            }
+          },
+          {
+            "name": "ext",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": {"description": "File body, served directly by Apache."},
-          "404": {"description": "ID unknown or operator-deleted."}
+          "200": {
+            "description": "File body, served directly by Apache."
+          },
+          "404": {
+            "description": "ID unknown or operator-deleted."
+          }
         }
       }
     },
@@ -100,13 +269,44 @@
         "summary": "Fetch a TTL'd file",
         "description": "Apache rewrites this to `/files/{bucket}/{id}.{ext}`. The file disappears after the cron sweep observes it past the bucket's TTL. ID is 4-char base62 — short-lived buckets accept post-expiry slot reuse, so a smaller namespace is sufficient.",
         "parameters": [
-          {"name": "bucket", "in": "path", "required": true, "schema": {"type": "string", "enum": ["1h", "1d", "1w"]}},
-          {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[A-Za-z0-9]{4}$"}},
-          {"name": "ext", "in": "path", "required": true, "schema": {"type": "string"}}
+          {
+            "name": "bucket",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "1d",
+                "1w"
+              ]
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{4}$"
+            }
+          },
+          {
+            "name": "ext",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": {"description": "File body, served directly by Apache."},
-          "404": {"description": "ID unknown or already expired."}
+          "200": {
+            "description": "File body, served directly by Apache."
+          },
+          "404": {
+            "description": "ID unknown or already expired."
+          }
         }
       }
     },
@@ -117,20 +317,238 @@
         "responses": {
           "200": {
             "description": "Runtime config.",
-            "content": {"application/json": {"schema": {
-              "type": "object",
-              "properties": {
-                "public_url": {"type": "string", "format": "uri"},
-                "web_ui_url": {"type": "string", "format": "uri", "description": "Front-end URL the operator advertises for this deployment. Surfaces in the LP via the dynamic Endpoints list so non-developer visitors can find the user-facing site."},
-                "max_bytes": {"type": "integer"},
-                "allowed_exts": {"type": "array", "items": {"type": "string"}},
-                "ttl_choices": {"type": "object", "additionalProperties": {"type": ["integer", "null"]}, "description": "Map of bucket name → TTL in seconds, or null for non-expiring buckets."},
-                "default_time": {"type": "string"},
-                "rate_window_sec": {"type": "integer"},
-                "rate_max_items": {"type": "integer"},
-                "id_len_by_bucket": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Map of bucket name → ID character count. Time-limited buckets use a shorter ID; the `keep` bucket uses a longer one so URLs stay stable across decades of accumulation."}
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "public_url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "web_ui_url": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Front-end URL the operator advertises for this deployment. Surfaces in the LP via the dynamic Endpoints list so non-developer visitors can find the user-facing site."
+                    },
+                    "max_bytes": {
+                      "type": "integer"
+                    },
+                    "allowed_exts": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "ttl_choices": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "description": "Map of bucket name → TTL in seconds, or null for non-expiring buckets."
+                    },
+                    "default_time": {
+                      "type": "string"
+                    },
+                    "rate_window_sec": {
+                      "type": "integer"
+                    },
+                    "rate_max_items": {
+                      "type": "integer"
+                    },
+                    "id_len_by_bucket": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      },
+                      "description": "Map of bucket name → ID character count. Time-limited buckets use a shorter ID; the `keep` bucket uses a longer one so URLs stay stable across decades of accumulation."
+                    }
+                  }
+                }
               }
-            }}}
+            }
+          }
+        }
+      }
+    },
+    "/list": {
+      "get": {
+        "summary": "List uploads (newest first)",
+        "description": "Scans the bucket directories and merges each file's sidecar metadata. Public, paginated, no database.",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "1h",
+                "1d",
+                "1w",
+                "keep"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of uploads",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bucket": {
+                      "type": "string"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "page_size": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "pages": {
+                      "type": "integer"
+                    },
+                    "now": {
+                      "type": "integer"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "bucket": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string",
+                            "description": "`<id>.<ext>`"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "comment": {
+                            "type": "string"
+                          },
+                          "size": {
+                            "type": "integer"
+                          },
+                          "uploaded_at": {
+                            "type": "integer"
+                          },
+                          "expires_at": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "has_delete_key": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown bucket"
+          }
+        }
+      }
+    },
+    "/delete": {
+      "post": {
+        "summary": "Delete an upload",
+        "description": "Either the file's delete key (given at upload) or any configured bearer token (operator override) authorizes the deletion. Removes the file and its sidecar.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "bucket",
+                  "id"
+                ],
+                "properties": {
+                  "bucket": {
+                    "type": "string",
+                    "enum": [
+                      "1h",
+                      "1d",
+                      "1w",
+                      "keep"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "description": "`<id>.<ext>`"
+                  },
+                  "key": {
+                    "type": "string",
+                    "description": "Delete key. Not needed with a bearer token."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "string"
+                    },
+                    "bucket": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed bucket/id"
+          },
+          "403": {
+            "description": "Delete key does not match"
+          },
+          "404": {
+            "description": "Already gone"
           }
         }
       }

@@ -1,8 +1,8 @@
 # Trueno — minimal CGI file host
 
-> Live deployment: <https://a.6umi.net/> renders this repo's `openapi.json`
-> through the shipped LP and Swagger UI — useful as a working sample
-> before you stand up your own.
+> Live deployment: <https://a2.6umi.net/> runs this repo as shipped — the
+> uploader UI at the root, the API page (Swagger UI over `openapi.json`) at
+> `/api.html` — useful as a working sample before you stand up your own.
 
 A small file host for shared hosting environments where Apache CGI is your
 only execution surface and a pip install is awkward. POST a multipart file
@@ -37,16 +37,23 @@ rather not also pay for an object store.
 ```
 docroot/           deploys to your Apache document root
 ├── upload.cgi     POST /upload handler
+├── list.cgi       GET /list — newest-first listing, paginated
+├── delete.cgi     POST /delete — by per-file delete key or bearer token
 ├── info.cgi       GET /info — runtime limits as JSON
-├── _trueno.py     shared constants (denied to clients via .htaccess)
+├── _trueno.py     shared constants + sidecar helpers (denied to clients via .htaccess)
 ├── .htaccess      ExecCGI + rewrites + Indexes off
-├── index.html     LP that loads Swagger UI from unpkg
-├── openapi.json   API spec (rendered by index.html)
-└── files/         created on first upload (gitignored)
+├── index.html     the uploader UI (form + file table; plain HTML/JS, no build)
+├── thumbs.html    image gallery page (browser-scaled previews)
+├── _ui.css/_ui.js shared styles (colours are CSS variables at the top) and helpers
+├── api.html       Swagger UI for the API, loaded from unpkg
+├── openapi.json   API spec (rendered by api.html)
+└── files/         created on first upload (gitignored); each file may have an
+                   `<id>.<ext>.meta` sidecar (original name, comment, hashed delete key)
 cron/
 └── expire.sh      per-bucket sweep (delete by default; supports archive-mode)
 tests/
 ├── test_upload.py end-to-end via subprocess + synthesized CGI env
+├── test_classic.py sidecars, anonymous mode, listing, deletion
 └── test_info.py   info endpoint smoke test
 ```
 
@@ -139,9 +146,10 @@ ssh trueno-host 'chmod 755 public_html/your-domain/upload.cgi && mkdir -p public
 
 ### 4. Configure the public URL base
 
-`docroot/.htaccess` ships with `SetEnv ASSET_PUBLIC_URL "https://a.example.test"`;
-edit it to your real public origin so the JSON response carries the right
-absolute URL.
+Set `PUBLIC_URL_BASE` in `make.local`; `make deploy` bakes it into the CGIs,
+`.htaccess` and `openapi.json` so the JSON responses carry the right absolute
+URL. (`.htaccess` also carries a `SetEnv ASSET_PUBLIC_URL`, but some shared
+hosts ignore `SetEnv`, so the baked default is what you should rely on.)
 
 ### 5. Install the cron sweep
 
@@ -170,6 +178,34 @@ curl -s -H "Authorization: Bearer $KEY" -F file=@/tmp/x.txt https://your.host/up
 curl -s -H "Authorization: Bearer $KEY" -F file=@/tmp/x.txt -F time=keep https://your.host/upload
 # → {"url": "https://your.host/AbCdEf.txt", "size": 6, "time": "keep", "expires_at": null}
 ```
+
+## Classic uploader mode
+
+Out of the box Trueno is a token-only API. The shipped `index.html` turns it
+into the kind of uploader that used to live on every shared host — a form,
+a listing, a delete key per file — without adding a database:
+
+- `POST /upload` also takes `comment` and `delete_key`. They go into a
+  sidecar `files/<bucket>/<id>.<ext>.meta` (JSON; the key is stored as a
+  sha256 hash). Apache never serves `.meta`; cron sweeps it with its file
+  since both share an mtime.
+- `GET /list?bucket=all|1h|1d|1w|keep&page=N` scans the bucket directories
+  and merges the sidecars. Files uploaded before sidecars existed are listed
+  by id. The listing is public: the URLs already are.
+- `POST /delete` with `bucket`, `id` and either `key` (the delete key) or a
+  bearer token (any configured token — the operator's override) removes the
+  file and its sidecar.
+- To let visitors upload **without a token**, set `ANON_BUCKETS = 1h,1d,1w`
+  in `make.local`. `make deploy` bakes it into `_trueno.py`; the UI reads it
+  from `/info` and marks the other buckets as "key required". Leave it empty
+  for a token-only host. `keep` should stay behind a token.
+
+`thumbs.html` is the image gallery: the browser scales each file itself,
+since a CGI host has no image library to make real thumbnails with. To
+recolour the pages, edit the variables at the top of `_ui.css`. Not included on
+purpose: captcha, IP bans, download counters (counting would route downloads
+through CGI; serving stays static) and accounts. If you need those, this is
+the wrong tool.
 
 ## Operating notes
 
@@ -208,8 +244,11 @@ ssh trueno-host 'mv ~/trueno-archive/1h/AbCd.jpg ~/public_html/your-domain/files
 | Setting | Default | Where |
 |---|---|---|
 | Bearer token(s) | (required) | `~/.trueno-key` (chmod 600, one per line, `# comments` ok) or `ASSET_API_KEY` env |
-| Public URL base | `https://a.example.test` | `SetEnv ASSET_PUBLIC_URL` in `.htaccess`; `make deploy` substitutes via `PUBLIC_URL_BASE` |
-| Site title (browser tab + OpenAPI `info.title`) | `🔱Trueno` | `SITE_TITLE` in `make.local`; `make deploy` substitutes into `index.html` and `openapi.json` |
+| Public URL base | `https://a.example.test` | `PUBLIC_URL_BASE` in `make.local`; `make deploy` bakes it into the CGIs, `.htaccess` and `openapi.json` (`SetEnv ASSET_PUBLIC_URL` is also honoured where hosts allow it) |
+| Anonymous buckets (classic uploader mode) | (none — token only) | `ANON_BUCKETS` in `make.local`, e.g. `1h,1d,1w`; `make deploy` bakes it into `_trueno.py`. `ASSET_ANON_BUCKETS` env overrides |
+| Comment / delete key length | 200 / 64 chars | `COMMENT_MAX_CHARS` / `DELETE_KEY_MAX_CHARS` in `_trueno.py` |
+| Listing page size | 50 | `LIST_PAGE_SIZE` in `_trueno.py` |
+| Site title (page heading, browser tab, OpenAPI `info.title`) | `🔱Trueno Uploader` | `SITE_TITLE` in `make.local`; `make deploy` writes it into the pages and `openapi.json` |
 | Web UI URL (surfaced in `/info` and rendered into the LP's Endpoints list) | `https://ui.example.test` (placeholder) | `UI_URL` in `make.local`; `make deploy` substitutes the placeholder in `_trueno.py`. Set this to your front-end URL so visitors of the API page can find the UI; leave default if you don't host a separate UI |
 | Allowed extensions | common image / document / video / audio / archive (jpg, png, webp, svg, pdf, txt, md, json, mp4, mov, mp3, wav, zip, tar.gz, 7z, …) | `ALLOWED_EXTS` in `_trueno.py` |
 | Max body | 50 MiB | `MAX_BYTES` in `_trueno.py` (Apache `LimitRequestBody` must permit it) |
