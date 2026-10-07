@@ -1,0 +1,84 @@
+/* Trueno UI. Colours are CSS variables: recolour by editing this block. */
+:root {
+  --bg: #004040; --input: #002424; --invert-fg: #002020;
+  --fg: #f0f0f0; --muted: rgba(240, 240, 240, .65); --border: rgba(240, 240, 240, .15);
+  --link: #eeffee; --visited: #dddddd; --alert: #ff8080;
+  --font-ui: Inter, "BIZ UDPGothic", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono", "BIZ UDPGothic", ui-monospace, monospace;
+}
+html, body { background: var(--bg); color: var(--fg); }
+body { font: 13px/1.5 var(--font-ui); max-width: 1000px; margin: 1.2rem auto; padding: 0 1rem; }
+a { color: var(--link); } a:visited { color: var(--visited); } a:hover { color: var(--fg); }
+h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 .5rem; display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+h1 nav { font-weight: 400; font-size: .9rem; }
+h1 nav a + a::before { content: " · "; color: var(--muted); }
+hr { border: 0; border-top: 1px solid var(--border); margin: .8rem 0; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--font-mono); }
+.err { color: var(--alert); }
+
+/* upload box: light frame with a title; two columns, controls left, notes right */
+fieldset.up { border: 1px solid var(--muted); border-radius: .25rem; padding: .6rem 1rem .9rem; margin: 0; background: transparent; }
+fieldset.up legend { padding: 0 .5rem; color: var(--fg); font-weight: 600; font-family: var(--font-mono); }
+.cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1rem 2rem; }
+@media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+.controls .row { display: grid; grid-template-columns: 6.5rem 1fr; gap: .4rem .8rem; align-items: center; margin: .4rem 0; }
+.controls .row > label:first-child { align-self: center; }
+.controls .row > label { color: var(--muted); }
+.controls .inline { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+.controls .row .muted { font-size: .9em; white-space: nowrap; }
+.controls .actions { grid-template-columns: 6.5rem auto; margin-top: .7rem; }
+.controls #showKey { font-size: .9em; }
+.side { font-size: .85em; line-height: 1.6; }
+.side .custom:empty { display: none; }
+.side #limits p { margin: .3rem 0; overflow-wrap: anywhere; }
+input, select, .drop { box-sizing: border-box; }
+input, select { font: inherit; color: var(--fg); background: var(--input); border: 1px solid var(--border); border-radius: .2rem; padding: .3rem .5rem; }
+input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.drop { position: relative; display: flex; align-items: center; justify-content: center; min-height: 3.75rem; padding: .35rem .8rem; border: 1px dashed var(--muted); border-radius: .25rem; background: var(--input); color: var(--muted); text-align: center; cursor: pointer; width: 100%; max-width: 30rem; }
+.drop.over { border-style: solid; border-color: var(--fg); color: var(--fg); }
+.drop.has { color: var(--fg); border-style: solid; font-family: var(--font-mono); }
+input[name=comment] { width: 100%; max-width: 30rem; display: block; }
+input[name=delete_key], input#token, select#time { width: 11rem; }
+input[name=delete_key], input#token { font-family: var(--font-mono); }
+input:focus, select:focus { outline: 1px solid var(--fg); outline-offset: 0; }
+/* buttons, control labels and table headers use the mono face */
+button, .controls .row > label, th { font-family: var(--font-mono); }
+button { font-size: inherit; color: var(--fg); background: transparent; border: 2px solid var(--fg); border-radius: .25rem; padding: .3rem 1.2rem; min-width: 7rem; font-weight: 500; cursor: pointer; transition: background-color .15s, color .15s, border-color .15s; }
+button:hover { background: var(--fg); color: var(--invert-fg); }
+/* primary: solid white, always */
+button.primary { background: var(--fg); color: var(--invert-fg); font-weight: 700; }
+button.primary:hover { background: #ffffff; border-color: #ffffff; }
+/* secondary: thin, quiet border */
+button.secondary { border-width: 1px; border-color: var(--border); color: var(--muted); padding: calc(.3rem + 1px) calc(1.2rem + 1px); }
+button.secondary:hover { background: rgba(240, 240, 240, .1); color: var(--fg); border-color: var(--border); }
+button:disabled { opacity: .5; cursor: default; }
+#result { margin-top: .5rem; font-family: var(--font-mono); word-break: break-all; }
+
+/* table: dense, bordered rows */
+table { border-collapse: collapse; width: 100%; }
+th, td { border-bottom: 1px solid var(--border); padding: .25rem .45rem; text-align: left; vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: .85em; letter-spacing: .04em; white-space: nowrap; }
+td.d { width: 1.2rem; text-align: center; }
+td.d button { padding: 0 .4rem; min-width: 0; border-width: 1px; border-color: var(--border); color: var(--muted); font-weight: 400; }
+td.d button:hover { background: var(--fg); color: var(--invert-fg); border-color: var(--fg); }
+td.d button:hover { border-color: var(--fg); color: var(--bg); background: var(--fg); }
+td.name, td.size, td.date, td.exp { font-family: var(--font-mono); white-space: nowrap; }
+td.name { white-space: normal; word-break: break-all; }
+td.name .orig { font-family: var(--font-ui); margin-left: .4rem; }
+td.size { text-align: right; }
+td.comment { overflow-wrap: anywhere; }
+.pages { display: flex; gap: .5rem; flex-wrap: wrap; align-items: baseline; margin: .4rem 0; font-family: var(--font-mono); }
+#pagerTop.top { margin-top: 1.4rem; }
+.pages a, .pages b { padding: 0 .2rem; } .pages b { color: var(--fg); }
+.pages .n { margin-left: auto; color: var(--muted); font-family: var(--font-ui); }
+
+/* thumbs page */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .8rem; }
+.grid figure { margin: 0; background: transparent; border: 1px solid var(--border); padding: .4rem; }
+.grid img { display: block; width: 100%; height: 120px; object-fit: contain; background: var(--bg); }
+.grid figcaption { font-family: var(--font-mono); font-size: .8em; margin-top: .3rem; word-break: break-all; }
+.grid figcaption .c { display: block; font-family: var(--font-ui); color: var(--muted); }
+footer { margin-top: 1.5rem; padding-top: .7rem; border-top: 1px solid var(--border); font-size: .85em; color: var(--muted); display: flex; gap: 1rem; justify-content: space-between; flex-wrap: wrap; }
+footer a { color: var(--muted); }
+footer a:hover { color: var(--fg); }

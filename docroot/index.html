@@ -3,67 +3,174 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>🔱Trueno</title>
-<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css">
+<!-- Site title: set SITE_TITLE in make.local; `make deploy` writes it here. -->
+<title>🔱Trueno Uploader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&family=BIZ+UDPGothic&display=swap">
+<link rel="stylesheet" href="/_ui.css">
+<script src="/_ui.js"></script>
 </head>
 <body>
-<div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+<h1>🔱Trueno Uploader <nav><a href="/thumbs.html">Thumbnails</a></nav></h1>
+
+<form id="up" enctype="multipart/form-data">
+<fieldset class="up">
+  <legend>Upload</legend>
+  <div class="cols">
+    <div class="controls">
+      <div class="row"><label for="file">File</label>
+        <label class="drop" id="drop" for="file"><input type="file" id="file" name="file" required>
+          <span class="drop-text" id="dropText">Drop a file here, or click to choose</span></label></div>
+      <div class="row"><label for="comment">Comment</label><input type="text" id="comment" name="comment" maxlength="200"></div>
+      <div class="row"><label for="delete_key">Delete key</label><span class="inline"><input type="text" id="delete_key" name="delete_key" maxlength="64" autocomplete="off"><span class="muted">optional, lets you delete the file later</span></span></div>
+      <div class="row"><label for="time">Expires</label><select name="time" id="time"></select></div>
+      <div class="row"><label for="token">API key</label><span class="inline"><a href="#" id="showKey" class="muted">optional, operators only — click to enter</a><input type="password" id="token" autocomplete="off" hidden></span></div>
+      <div class="row actions"><span></span><span><button type="submit" id="submit" class="primary">Up/Reload</button> <button type="reset" class="secondary">Cancel</button></span></div>
+      <div id="result"></div>
+    </div>
+    <aside class="side">
+      <!-- Operators: this column is yours. Put a notice, a picture, house rules
+           in .custom; the page fills in #limits from /info. -->
+      <div class="custom"></div>
+      <div id="limits" class="muted">Loading…</div>
+    </aside>
+  </div>
+</fieldset>
+</form>
+
+<div id="pagerTop" class="top"></div>
+<table>
+  <thead><tr><th>D</th><th>NAME</th><th>COMMENT</th><th>SIZE</th><th>DATE</th><th>EXPIRES</th></tr></thead>
+  <tbody id="rows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+</table>
+<div id="pagerBottom"></div>
+<p class="muted">Show: <select id="bucket"><option value="all">all</option></select></p>
+
+<footer><span>Runs on <a href="https://github.com/kimari-s/trueno">Trueno</a>, a minimal CGI uploader · © kimari-s</span><a href="/api.html">API</a></footer>
+
 <script>
-function fmtBytes(n) {
-  if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(0) + " MiB";
-  if (n >= 1024) return (n / 1024).toFixed(0) + " KiB";
-  return n + " B";
-}
-function fmtDuration(sec) {
-  if (sec >= 3600) return (sec / 3600).toFixed(0) + "h";
-  if (sec >= 60) return (sec / 60).toFixed(0) + "min";
-  return sec + "s";
-}
-function limitsMarkdown(info) {
-  const ttls = Object.entries(info.ttl_choices).map(([b, ttl]) => {
-    const label = ttl === null ? "no expiry" : fmtDuration(ttl);
-    const isDefault = b === info.default_time ? ", default" : "";
-    return "`" + b + "` (" + label + isDefault + ")";
-  }).join(" / ");
-  const idLens = Object.entries(info.id_len_by_bucket).map(([b, n]) => "`" + b + "`=" + n).join(" / ");
-  // Two leading newlines guarantee a blank line between the existing
-  // description and this block. Without it, any setext-like underline
-  // (`---` / `===`) on the next line would promote the preceding paragraph
-  // to <h2>/<h1>; an explicit blank line keeps the description a <p>.
-  // No <hr> here either — the bold section labels are enough.
-  return "\n\n" + [
-    "**Endpoints**",
-    "",
-    "- Server: `" + info.public_url + "`",
-    "- Web UI: `" + info.web_ui_url + "`",
-    "",
-    "**Limits**",
-    "",
-    "- Max upload: " + fmtBytes(info.max_bytes),
-    "- TTL choices: " + ttls,
-    "- Rate limit: " + info.rate_max_items + " uploads / " + fmtDuration(info.rate_window_sec) + " (host-wide)",
-    "- ID length: " + idLens + " chars (base62)",
-    "- Allowed extensions: " + info.allowed_exts.map(e => "`" + e + "`").join(" "),
-  ].join("\n");
-}
-Promise.all([
-  fetch("/openapi.json").then(r => r.json()),
-  fetch("/info").then(r => r.ok ? r.json() : null).catch(() => null)
-]).then(([spec, info]) => {
-  if (info) {
-    spec.info.description = (spec.info.description || "") + limitsMarkdown(info);
+(function () {
+  "use strict";
+  var U = window.TruenoUI, info = null, page = 1, pages = 1;
+  var $ = function (id) { return document.getElementById(id); };
+  function authHeaders() { var t = $("token").value.trim(); return t ? { "Authorization": "Bearer " + t } : {}; }
+  function setResult(html, ok) { var el = $("result"); el.className = ok ? "" : "err"; el.innerHTML = html; }
+
+  function applyInfo(i) {
+    info = i;
+    var anon = i.anon_buckets || [];
+    var sel = $("time"); sel.innerHTML = "";
+    Object.keys(i.ttl_choices).forEach(function (b) {
+      var ttl = i.ttl_choices[b];
+      var o = document.createElement("option");
+      o.value = b;
+      o.textContent = b + (anon.indexOf(b) < 0 ? " (key)" : "");
+      if (b === i.default_time) o.selected = true;
+      sel.appendChild(o);
+      var f = document.createElement("option"); f.value = b; f.textContent = b; $("bucket").appendChild(f);
+    });
+    var ttls = Object.keys(i.ttl_choices).map(function (b) {
+      var ttl = i.ttl_choices[b];
+      return b + (ttl === null ? " keeps the file" : " = " + U.fmtDuration(ttl));
+    }).join(", ");
+    $("limits").innerHTML =
+      "<p>Files up to " + U.fmtBytes(i.max_bytes) + ". Expiry: " + U.esc(ttls) + ". " +
+      (anon.length ? "No key is needed for " + anon.join(" / ") + "; the other choices want an operator key." : "An operator key is required.") +
+      " At most " + i.rate_max_items + " uploads per " + U.fmtDuration(i.rate_window_sec) + " for everyone together.</p>" +
+      "<p>Accepted: " + U.esc(i.allowed_exts.map(function (e) { return e.slice(1); }).join(" ")) + "</p>";
   }
-  SwaggerUIBundle({
-    spec,
-    dom_id: "#swagger-ui",
-    deepLinking: false,
-    docExpansion: "list",
-    defaultModelsExpandDepth: -1,
-    tryItOutEnabled: false,
-    supportedSubmitMethods: []
+
+  function load() {
+    $("rows").innerHTML = '<tr><td colspan="6" class="muted">Loading…</td></tr>';
+    fetch("/list?bucket=" + encodeURIComponent($("bucket").value) + "&page=" + page)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) throw new Error(d.error);
+        pages = d.pages; page = d.page;
+        ["pagerTop", "pagerBottom"].forEach(function (id) {
+          $(id).innerHTML = "";
+          $(id).appendChild(U.pager(page, pages, function (p) { page = p; load(); }, d.total));
+        });
+        if (!d.items.length) {
+          $("rows").innerHTML = '<tr><td colspan="6" class="muted">No files.</td></tr>';
+          return;
+        }
+        $("rows").innerHTML = d.items.map(function (it) {
+          return "<tr>" +
+            '<td class="d"><button type="button" title="delete" data-bucket="' + U.esc(it.bucket) + '" data-id="' + U.esc(it.id) + '" data-key="' + (it.has_delete_key ? 1 : 0) + '">D</button></td>' +
+            '<td class="name"><a href="' + U.esc(it.url) + '" target="_blank" rel="noopener">' + U.esc(it.id) + "</a>" +
+              (U.showName(it) ? ' <span class="muted orig">' + U.esc(it.name) + "</span>" : "") + "</td>" +
+            '<td class="comment">' + U.esc(it.comment) + "</td>" +
+            '<td class="size">' + U.fmtBytes(it.size) + "</td>" +
+            '<td class="date">' + U.fmtDate(it.uploaded_at) + "</td>" +
+            '<td class="exp">' + U.esc(U.fmtLeft(it.expires_at, d.now)) + "</td>" +
+            "</tr>";
+        }).join("");
+      })
+      .catch(function (e) { $("rows").innerHTML = '<tr><td colspan="6" class="err">' + U.esc(e.message) + "</td></tr>"; });
+  }
+
+  $("up").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var form = ev.target, file = form.file.files[0];
+    if (!file) return;
+    if (info && file.size > info.max_bytes) { setResult("File is larger than " + U.fmtBytes(info.max_bytes) + ".", false); return; }
+    var fd = new FormData();
+    fd.append("file", file); fd.append("time", form.time.value);
+    if (form.comment.value) fd.append("comment", form.comment.value);
+    if (form.delete_key.value) fd.append("delete_key", form.delete_key.value);
+    $("submit").disabled = true; setResult("Uploading…", true);
+    fetch("/upload", { method: "POST", body: fd, headers: authHeaders() })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.j.error || "upload failed");
+        setResult('<a href="' + U.esc(res.j.url) + '" target="_blank" rel="noopener">' + U.esc(res.j.url) + "</a>" +
+          ' <button type="button" id="copy">copy</button>' + (res.j.has_delete_key ? ' <span class="muted">keep your delete key</span>' : ""), true);
+        $("copy").addEventListener("click", function () { navigator.clipboard.writeText(res.j.url).then(function () { $("copy").textContent = "copied"; }); });
+        form.file.value = ""; form.comment.value = "";
+        page = 1; load();
+      })
+      .catch(function (e) { setResult(U.esc(e.message), false); })
+      .then(function () { $("submit").disabled = false; });
   });
-});
+
+  $("rows").addEventListener("click", function (ev) {
+    var b = ev.target.closest("button[data-id]");
+    if (!b) return;
+    var hasToken = !!$("token").value.trim();
+    var body = "bucket=" + encodeURIComponent(b.dataset.bucket) + "&id=" + encodeURIComponent(b.dataset.id);
+    if (!hasToken) {
+      if (b.dataset.key !== "1") { alert("No delete key was set for " + b.dataset.id + ". Only the operator can delete it."); return; }
+      var key = prompt("Delete key for " + b.dataset.id + ":");
+      if (key === null || key === "") return;
+      body += "&key=" + encodeURIComponent(key);
+    } else if (!confirm("Delete " + b.dataset.id + " with your API key?")) { return; }
+    var headers = authHeaders(); headers["Content-Type"] = "application/x-www-form-urlencoded";
+    fetch("/delete", { method: "POST", body: body, headers: headers })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (j.error) alert(j.error); load(); })
+      .catch(function (e) { alert(e.message); });
+  });
+
+  $("bucket").addEventListener("change", function () { page = 1; load(); });
+  (function () {
+    var drop = $("drop"), input = $("file"), text = $("dropText"), idle = text.textContent;
+    function show() { text.textContent = input.files[0] ? input.files[0].name + " (" + U.fmtBytes(input.files[0].size) + ")" : idle; drop.classList.toggle("has", !!input.files[0]); }
+    input.addEventListener("change", show);
+    $("up").addEventListener("reset", function () { setTimeout(show, 0); });
+    ["dragenter", "dragover"].forEach(function (t) { drop.addEventListener(t, function (ev) { ev.preventDefault(); drop.classList.add("over"); }); });
+    ["dragleave", "drop"].forEach(function (t) { drop.addEventListener(t, function (ev) { ev.preventDefault(); drop.classList.remove("over"); }); });
+    drop.addEventListener("drop", function (ev) {
+      if (!ev.dataTransfer.files.length) return;
+      var dt = new DataTransfer(); dt.items.add(ev.dataTransfer.files[0]); input.files = dt.files; show();
+    });
+  })();
+  $("showKey").addEventListener("click", function (ev) { ev.preventDefault(); $("token").hidden = false; this.hidden = true; $("token").focus(); });
+  fetch("/info").then(function (r) { return r.json(); }).then(applyInfo)
+    .catch(function () { $("limits").textContent = "Could not load server limits."; })
+    .then(load);
+})();
 </script>
 </body>
 </html>
