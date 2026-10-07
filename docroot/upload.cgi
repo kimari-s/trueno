@@ -2,12 +2,15 @@
 """Trueno — minimal file host CGI for shared hosting.
 
 POST a multipart/form-data body with:
-    Authorization: Bearer <key>
+    Authorization: Bearer <key>   (optional when ASSET_ANON_BUCKETS allows the bucket)
     file=@<binary>
-    time=1h | 1d | 1w | keep   (optional; defaults to 1h)
+    time=1h | 1d | 1w | keep      (optional; defaults to 1h)
+    comment=<text>                (optional; shown in the listing)
+    delete_key=<text>             (optional; lets the uploader delete the file later)
 
 Saves the file to ./files/{bucket}/{id}.{ext} (relative to this script,
-4-char base62 id) and returns JSON {url, size, expires_at}. The `keep`
+4-char base62 id) plus a sidecar {id}.{ext}.meta, and returns JSON
+{url, name, size, time, expires_at, comment, has_delete_key}. The `keep`
 bucket is exempt from cron expiry and gets a privileged URL form
 (no /{bucket}/ prefix); other buckets are swept by cron.
 
@@ -30,16 +33,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _trueno import (  # noqa: E402
     ALLOWED_EXTS,
+    ANON_BUCKETS,
     BUCKETS,
+    COMMENT_MAX_CHARS,
     DEFAULT_TIME,
+    DELETE_KEY_MAX_CHARS,
     KEY_FILE_DEFAULT,
     MAX_BYTES,
-    PUBLIC_URL_BASE,
+    META_SUFFIX,
     RATE_MAX_ITEMS,
     RATE_WINDOW_SEC,
     _ID_ALPHABET,
     _ID_LEN_BY_BUCKET,
     _ID_RETRIES,
+    hash_delete_key,
+    public_url,
+    write_meta,
 )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -140,7 +149,7 @@ def _check_rate_limit() -> None:
         try:
             for entry in os.scandir(str(bucket_dir)):
                 try:
-                    if not entry.is_file():
+                    if not entry.is_file() or entry.name.endswith(META_SUFFIX):
                         continue
                     if entry.stat().st_mtime > cutoff:
                         count += 1
@@ -261,15 +270,6 @@ def _save_upload(raw_filename: str, data: bytes, bucket: str) -> str:
     raise _Reject(500, f"could not allocate filename after {_ID_RETRIES} retries")
 
 
-def _public_url(bucket: str, name: str) -> str:
-    """`keep` bucket gets the privileged short form `<base>/<id>.<ext>`;
-    every other bucket exposes the bucket as a path segment so the URL
-    itself communicates the TTL category to the recipient."""
-    if bucket == "keep":
-        return f"{PUBLIC_URL_BASE}/{name}"
-    return f"{PUBLIC_URL_BASE}/{bucket}/{name}"
-
-
 def main() -> None:
     method = os.environ.get("REQUEST_METHOD", "GET").upper()
     if method != "POST":
@@ -277,13 +277,16 @@ def main() -> None:
         return
 
     api_keys = _load_api_keys()
-    if not api_keys:
+    if not api_keys and not ANON_BUCKETS:
         _error("503 Service Unavailable", 503, "uploader not configured")
         return
     allowed_buckets = _check_auth(api_keys)
     if allowed_buckets is None:
-        _error("401 Unauthorized", 401, "invalid or missing bearer token")
-        return
+        # No (valid) token: fall back to the operator's anonymous allowance.
+        if not ANON_BUCKETS:
+            _error("401 Unauthorized", 401, "invalid or missing bearer token")
+            return
+        allowed_buckets = ANON_BUCKETS
 
     try:
         _check_rate_limit()
@@ -297,20 +300,37 @@ def main() -> None:
                 403,
                 f"key not authorized for bucket {bucket!r}; allowed: {sorted(allowed_buckets)}",
             )
+        comment = fields.get("comment", "")[:COMMENT_MAX_CHARS]
+        delete_key = fields.get("delete_key", "")[:DELETE_KEY_MAX_CHARS]
         name = _save_upload(filename, data, bucket)
     except _Reject as e:
         _error(f"{e.code} {e.message}", e.code, e.message)
         return
 
+    original = Path(filename).name
+    now = int(time.time())
+    write_meta(
+        UPLOAD_DIR / bucket / name,
+        {
+            "name": original,
+            "comment": comment,
+            "delete_key": hash_delete_key(delete_key) if delete_key else "",
+            "uploaded_at": now,
+            "size": len(data),
+        },
+    )
     ttl = BUCKETS[bucket]
-    expires_at = int(time.time()) + ttl if ttl is not None else None
+    expires_at = now + ttl if ttl is not None else None
     _respond(
         "200 OK",
         {
-            "url": _public_url(bucket, name),
+            "url": public_url(bucket, name),
+            "name": original,
             "size": len(data),
             "time": bucket,
             "expires_at": expires_at,
+            "comment": comment,
+            "has_delete_key": bool(delete_key),
         },
     )
 

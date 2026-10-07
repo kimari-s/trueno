@@ -145,7 +145,7 @@ def test_default_bucket_is_1h(tmp_path):
     assert payload["time"] == "1h"
     assert isinstance(payload["expires_at"], int)
     assert payload["size"] == 4
-    files = list((docroot / "files" / "1h").iterdir())
+    files = [f for f in (docroot / "files" / "1h").iterdir() if f.suffix != ".meta"]
     assert len(files) == 1
     # 4-char stem + .jpg
     assert re.match(r"^[A-Za-z0-9]{4}\.jpg$", files[0].name), files[0].name
@@ -169,7 +169,7 @@ def test_keep_bucket_uses_6char_short_url_and_null_expires(tmp_path):
     assert payload["time"] == "keep"
     assert payload["expires_at"] is None
     assert (docroot / "files" / "keep").is_dir()
-    files = list((docroot / "files" / "keep").iterdir())
+    files = [f for f in (docroot / "files" / "keep").iterdir() if f.suffix != ".meta"]
     assert len(files) == 1
     assert re.match(r"^[A-Za-z0-9]{6}\.jpg$", files[0].name), files[0].name
 

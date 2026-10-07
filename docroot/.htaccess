@@ -1,12 +1,18 @@
 # Trueno — Apache config for the file host.
 #
 # Layout:
+#   ./index.html          — the uploader UI (form + listing)
+#   ./api.html            — Swagger UI for the API
 #   ./upload.cgi          — POST /upload handler (CGI)
+#   ./list.cgi            — GET  /list   listing (CGI)
+#   ./delete.cgi          — POST /delete by delete key or bearer (CGI)
 #   ./info.cgi            — GET  /info  runtime limits (CGI)
-#   ./files/<bucket>/     — uploaded files (id.ext, 4-char base62 id)
-#                           buckets: 1h | 1d | 1w | keep
+#   ./files/<bucket>/     — uploaded files (id.ext, 4-char base62 id) and
+#                           their id.ext.meta sidecars; buckets: 1h | 1d | 1w | keep
 # Public URLs (replace example.test with your origin):
 #   POST  https://a.example.test/upload
+#   GET   https://a.example.test/list
+#   POST  https://a.example.test/delete
 #   GET   https://a.example.test/info
 #   GET   https://a.example.test/<id>.<ext>            (keep bucket, short form)
 #   GET   https://a.example.test/<bucket>/<id>.<ext>   (1h | 1d | 1w)
@@ -17,6 +23,12 @@ AddHandler cgi-script .cgi
 # Internal helper modules (e.g. _trueno.py) live alongside the CGIs so Python
 # can import them, but Apache must never serve them as static files.
 <FilesMatch "^_.*\.py$">
+    Require all denied
+</FilesMatch>
+
+# Sidecar metadata (original name, comment, hashed delete key) is read by
+# the CGIs only; it is never served.
+<FilesMatch "\.meta(\.tmp)?$">
     Require all denied
 </FilesMatch>
 
@@ -33,6 +45,12 @@ AddHandler cgi-script .cgi
 # (chmod 600, outside docroot) or, for local dev, from ASSET_API_KEY.
 SetEnv ASSET_PUBLIC_URL "https://a.example.test"
 
+# Classic uploader mode (token-less uploads into some buckets) is set via
+# ANON_BUCKETS in make.local and baked into _trueno.py by `make deploy`,
+# because SetEnv here is ignored on some shared hosts. This line is an
+# alternative where SetEnv does work:
+# SetEnv ASSET_ANON_BUCKETS "1h,1d,1w"
+
 RewriteEngine On
 
 # Fallback for hosts where CGIPassAuth is unavailable: copy Authorization
@@ -45,6 +63,10 @@ RewriteRule ^upload/?$ /upload.cgi [L]
 
 # /info (and /info/) → /info.cgi   (runtime config / limits)
 RewriteRule ^info/?$ /info.cgi [L]
+
+# /list → /list.cgi, /delete → /delete.cgi
+RewriteRule ^list/?$ /list.cgi [L,QSA]
+RewriteRule ^delete/?$ /delete.cgi [L]
 
 # URL length encodes the bucket category — short-lived buckets get a 4-char
 # ID (cheap, slot-reuse acceptable since expires_at is in the contract);
